@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Info Chatbot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        #chat-container {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            position: fixed;
+            bottom: 80px;
+            right: 20px;
+            width: 350px;
+            max-height: 70vh;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            z-index: 1000;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        #chat-header {
+            width: 100%;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        #chat-header h1 {
+            font-size: 20px;
+            color: #333;
+            margin: 0;
+        }
+
+        #result-container {
+            width: 100%;
+            margin-bottom: 10px;
+            text-align: left;
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+        
+        table {
+            width: 100%;
+            margin-bottom: 10px;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            margin-top: 10px;
+        }
+
+        th,
+        td {
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+
+        th {
+            background-color: #007bff;
+            color: white;
+        }
+
+        .not-found {
+            color: red;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .search-again {
+            margin-top: 10px;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        #chat-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            outline: none;
+            margin-bottom: 10px;
+        }
+
+        button {
+            padding: 10px 15px;
+            border: none;
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+            border-radius: 5px;
+            width: 100%;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        #source-select {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        #chatbot-icon {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            font-size: 30px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="chat-container">
+        <div id="chat-header">
+            <h1>Product Info Chatbot</h1>
+        </div>
+        <input type="text" id="chat-input" placeholder="Enter product name..." onkeypress="handleKeyPress(event)">
+        <div id="result-container"></div>
+        <select id="source-select">
+            <option value="database">Database</option>
+            <option value="world">World Data</option>
+        </select>
+        <button onclick="sendMessage()">Search</button>
+    </div>
+    <button id="chatbot-icon" onclick="toggleChat()">💬</button>
+    <script>
+        function toggleChat() {
+            const chatContainer = document.getElementById('chat-container');
+            chatContainer.style.display = chatContainer.style.display === 'none' ? 'flex' : 'none';
+        }
+        function sendMessage() {
+            const productName = document.getElementById('chat-input').value.trim();
+            const source = document.getElementById('source-select').value;
+            const resultContainer = document.getElementById('result-container');
+            if (!productName) return;
+            resultContainer.innerHTML = "<p>Loading...</p>";
+            fetch('/get-gemini-response/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: `product_name=${encodeURIComponent(productName)}&source=${source}`
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        resultContainer.innerHTML = `<p class="not-found">${data.error}</p>`;
+                        return;
+                    }
+                    if (data.not_found && source === "database") {
+                        // Only show "Product not found" when searching in the database
+                        resultContainer.innerHTML = `
+            <p class="not-found">No product found. Would you like to search the web?</p>
+            <p class="search-again"><a href="https://www.google.com/search?q=${encodeURIComponent(productName)}" target="_blank">Search Google</a></p>
+        `;
+                        return;
+                    }
+                    if (data.products && data.products.length > 0) {
+                        const products = data.products;
+                        resultContainer.innerHTML = `
+            <table>
+                <tr><th>Name</th><th>Price</th><th>Details</th></tr>
+                ${products.map(product => `
+                <tr>
+                    <td>${product.name}</td>
+                    <td>${product.price}</td>
+                    <td>${product.details}</td>
+                </tr>
+                `).join('')}
+            </table>
+        `;
+                    } else {
+                        resultContainer.innerHTML = `<p>${data.reply}</p>`; // AI-generated response
+                    }
+                })
+                .catch(error => {
+                    resultContainer.innerHTML = `<p class="not-found">Error: ${error.message}</p>`;
+                });
+        }
+        function handleKeyPress(event) {
+            if (event.key === "Enter") {
+                sendMessage();
+            }
+        }
+        function getCSRFToken() {
+            let cookieValue = null;
+            if (document.cookie) {
+                document.cookie.split(';').forEach(cookie => {
+                    cookie = cookie.trim();
+                    if (cookie.startsWith("csrftoken=")) {
+                        cookieValue = decodeURIComponent(cookie.split('=')[1]);
+                    }
+                });
+            }
+            return cookieValue;
+        }
+    </script>
+</body>
+
+</html>
